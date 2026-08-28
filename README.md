@@ -339,16 +339,6 @@ discipline, secret scanning in CI, least-privilege credentials, etc.).
   Tune `entropy_threshold` and, where needed, extend `patterns.py` for
   your own credential formats.
 
-## Contributing
-
-Issues and pull requests are welcome. Please:
-
-1. Add tests for any new detection pattern or behavior change.
-2. Use only fake/example credentials in tests, examples, and docs —
-   never real secrets.
-3. Keep the standard-library-only dependency policy unless there's a
-   strong reason to add a dependency, and discuss it in an issue first.
-4. Run `pytest` before opening a PR.
 
 ## License
 
