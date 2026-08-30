@@ -488,3 +488,8 @@ Issues and pull requests are welcome. Please:
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+
+## ☕ Get me a coffee
+
+If you find this project useful, consider [supporting its development through GitHub Sponsors](https://github.com/Sam3360/sponsors).
