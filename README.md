@@ -489,6 +489,7 @@ Issues and pull requests are welcome. Please:
 
 MIT — see [LICENSE](LICENSE).
 
+---
 
 ## ☕ Get me a coffee
 
