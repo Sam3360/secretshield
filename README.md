@@ -32,6 +32,15 @@ exactly that class of mistake during local development and debugging.
 It is **not** a replacement for secret management, code review, or
 static-analysis security tooling — see [Limitations](#limitations) below.
 
+## 🎥 Demo
+
+See SecretShield in action:
+
+[![SecretShield Demo](https://img.youtube.com/vi/g95lNIhWsXM/maxresdefault.jpg)](https://youtu.be/g95lNIhWsXM)
+
+**▶️ [Watch the full demo on YouTube](https://youtu.be/g95lNIhWsXM)**
+
+
 ## Installation
 
 ```bash

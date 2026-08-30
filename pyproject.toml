@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secretshield"
-version = "0.3.0"
+version = "0.3.1"
 description = "Detect and redact likely secrets before they reach Python's terminal output or logging system."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "secretshield contributors" },
+    { name = "Samarth Chugh (Sam3360)" },
 ]
 keywords = ["security", "secrets", "redaction", "logging", "stdout", "credentials"]
 classifiers = [
