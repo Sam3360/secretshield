@@ -491,6 +491,6 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-## ☕ Get me a coffee
+## [ ☕](https://github.com/sponsors/Sam3360/) Get me a coffee
 
 If you find this project useful, consider [supporting its development through GitHub Sponsors](https://github.com/sponsors/Sam3360/).
