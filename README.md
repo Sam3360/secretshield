@@ -1,168 +1,230 @@
-# secretshield
+🛡️ SecretShield
 
-`secretshield` is a local Python security utility that detects likely
-secrets (API keys, tokens, passwords, private keys, and other
-credential-shaped strings) and redacts them **before** they are printed
-through Python's terminal output (`stdout`/`stderr`) or the standard
-`logging` module.
+<p align="center">
+  <strong>Catch secrets before they hit your terminal, logs, commits, or CI.</strong><br>
+  A local, dependency-free Python security utility for detecting and redacting credential-shaped data.
+</p>
 
-```python
+<p align="center">
+  <a href="https://pypi.org/project/secretshield/"><img src="https://img.shields.io/pypi/v/secretshield?style=for-the-badge&label=PyPI" alt="PyPI"></a>
+  <a href="https://github.com/Sam3360/secretshield"><img src="https://img.shields.io/github/stars/Sam3360/secretshield?style=for-the-badge&logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/Sam3360/secretshield/actions"><img src="https://img.shields.io/github/actions/workflow/status/Sam3360/secretshield/secretshield.yml?style=for-the-badge&label=CI" alt="GitHub Actions"></a>
+  <img src="https://img.shields.io/pypi/pyversions/secretshield?style=for-the-badge" alt="Python versions">
+  <img src="https://img.shields.io/github/license/Sam3360/secretshield?style=for-the-badge" alt="MIT License">
+</p>
+
+⚡ What is SecretShield?
+
+secretshield is a local Python security utility that detects likely secrets — API keys, tokens, passwords, private keys, and other credential-shaped strings — and redacts them before they are printed through Python's stdout, stderr, or standard logging system.
+
+It also works as a static scanner, interactive auto-fixer, Git pre-commit guard, and GitHub Actions CI check.
+
+The idea
+
+                         SECRET
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+        Running Python              Source code
+              │                         │
+       stdout / stderr             secretshield scan
+          / logging                      │
+              │                    ┌─────┴─────┐
+              ▼                    │           │
+       🛡️ REDACT IT              Report      --fix
+                                   │           │
+                                   │      Move to .env
+                                   │
+                              CI / Git hook
+
+One tool. Multiple layers of protection.
+
+✨ Features
+
+Feature
+
+What it does
+
+🛡️ Runtime protection
+
+Redacts likely secrets from stdout, stderr, and logging while your Python app runs
+
+🔎 Static scanning
+
+Scans source/config files without executing or importing them
+
+🔧 --fix auto-repair
+
+Interactively moves safely-detectable Python assignments into .env
+
+🪝 Git pre-commit hook
+
+Scans the exact staged contents before every commit
+
+🤖 GitHub Actions
+
+Runs secret scanning automatically on pushes and pull requests
+
+🧠 Pattern detection
+
+Recognizes common credential formats
+
+📈 Entropy detection
+
+Catches random-looking secrets that do not match known formats
+
+📄 JSON output
+
+Machine-readable scan results for CI and automation
+
+🎛️ Configurable
+
+Enable/disable protection and tune redaction + entropy settings
+
+🔌 Dependency-free
+
+No third-party runtime dependencies
+
+🔒 Local-only
+
+No network calls and no telemetry
+
+🚀 Installation
+
+Requires Python 3.10+.
+
+pip install secretshield
+
+For local development:
+
+pip install -e ".[dev]"
+
+No third-party runtime dependencies are required.
+
+🛡️ Runtime Protection
+
+Protection for Python's stdout, stderr, and logging is enabled when SecretShield is imported.
+
 import secretshield
 
 api_key = "sk-example1234567890abcdefFAKEKEY"
-print("API key:", api_key)
-```
 
-```text
+print("API key:", api_key)
+
+Instead of exposing the value:
+
 API key: ********
 ⚠ secretshield: Potential secret detected and redacted.
-```
 
-The real secret value never appears in the redacted output, in
-secretshield's own warning messages, or in any exception it raises.
+The real secret value is not included in SecretShield's warning messages or exceptions.
 
-## Why it exists
+Toggle protection
 
-Secrets end up in terminal output and logs more often than anyone
-intends: a debug `print()` left in accidentally, a stack trace that
-includes a config dict, a `logger.info()` call that dumps request
-headers. `secretshield` is a small, dependency-free safety net for
-exactly that class of mistake during local development and debugging.
-
-It is **not** a replacement for secret management, code review, or
-static-analysis security tooling — see [Limitations](#limitations) below.
-
-## 🎥 Demo
-
-See SecretShield in action:
-
-[![SecretShield Demo](https://img.youtube.com/vi/g95lNIhWsXM/maxresdefault.jpg)](https://youtu.be/g95lNIhWsXM)
-
-**▶️ [Watch the full demo on YouTube](https://youtu.be/g95lNIhWsXM)**
-
-
-## Installation
-
-```bash
-pip install secretshield
-```
-
-For local development, from a cloned copy of this repository:
-
-```bash
-pip install -e ".[dev]"
-```
-
-Requires Python 3.10 or newer. No third-party runtime dependencies.
-
-## Basic usage
-
-Protection for `sys.stdout`, `sys.stderr`, and `logging` is enabled the
-moment you import the package:
-
-```python
 import secretshield
 
-password = "hunter2-example-not-real"
-print("Using password:", password)
-```
+secretshield.disable()
 
-```text
-Using password: ********
-⚠ secretshield: Potential secret detected and redacted.
-```
+# protection is off
 
-You can also toggle protection manually:
+secretshield.enable()
 
-```python
-import secretshield
+# protection is back on
 
-secretshield.disable()   # protection off
-secretshield.enable()    # protection back on (idempotent, safe to call repeatedly)
 secretshield.is_enabled()
-```
 
-### Detecting or redacting text directly
+enable() and disable() are safe to call repeatedly.
 
-You don't need to route text through stdout/logging to use the
-detection and redaction logic:
+🔎 Detect & Redact Text Directly
 
-```python
+You can use the detection engine without routing text through a terminal or logger.
+
 from secretshield import detect, redact
 
 matches = detect("aws_key=AKIAABCDEFGHIJKLMNOP")
-# [Match(start=8, end=28, value='AKIA...', kind='aws_access_key_id')]
 
-safe_text, was_redacted = redact("aws_key=AKIAABCDEFGHIJKLMNOP")
-# ("aws_key=********", True)
-```
+safe_text, was_redacted = redact(
+    "aws_key=AKIAABCDEFGHIJKLMNOP"
+)
 
-## Examples
+detect() returns match information, while redact() gives you the sanitized text and whether anything was changed.
 
-See the [`examples/`](examples/) directory:
+🔍 Static Scanning
 
-* [`examples/basic.py`](examples/basic.py) — a fake secret printed to
-  the terminal.
-* [`examples/logging_demo.py`](examples/logging_demo.py) — a fake secret
-  logged via both `%s`-style arguments and an f-string.
+Scan a project:
 
-Run either with:
-
-```bash
-python examples/basic.py
-python examples/logging_demo.py
-```
-
-## CLI
-
-```bash
-secretshield --help
-secretshield --version
-```
-
-### `run` — execute a script with runtime protection
-
-```bash
-secretshield run app.py [args...]
-```
-
-Runs `app.py` as `__main__` with `sys.stdout`, `sys.stderr`, and
-`logging` protected for the duration of the script's execution. This is
-useful for wrapping an existing script without editing its source.
-
-### `scan` — static file/directory scanning
-
-```bash
 secretshield scan .
+
+Or a single file:
+
 secretshield scan path/to/file.py
+
+Scan a source directory and return JSON:
+
 secretshield scan src/ --json
-```
 
-`scan` recursively scans a directory (or a single file) of text-based
-project files, reporting the *kind* and *location* of any likely secrets
-found. It does **not** execute or import anything it scans, and it never
-prints the secret values themselves — only which file, which line, and
-what kind of credential it looks like.
+Important difference
 
-**Supported file types** include Python, JavaScript/JSX, TypeScript/TSX,
-HTML, CSS/SCSS, Vue, Svelte, JSON/JSONC, YAML, TOML/INI/CFG/CONF, `.env`
-and `.env.*` variants, shell scripts (`.sh`/`.bash`/`.zsh`), Windows
-scripts (`.ps1`/`.bat`/`.cmd`), XML, Markdown/plain text, SQL, and
-GraphQL. Extensionless files (`Dockerfile`, `Makefile`, etc.) are also
-scanned as long as they're actually text, not binary. Files are treated
-purely as text — the same `detect()` engine used for runtime protection
-does the work, regardless of which language the file is written in.
+scan is static analysis.
 
-By default, `scan` skips common non-source directories: `.git/`,
-`node_modules/`, `__pycache__/`, `.venv/`/`venv/`, `dist/`, `build/`,
-`coverage/`, and a few similar cache directories. It also skips binary
-files automatically (detected by sniffing for null bytes / invalid
-UTF-8), so pointing it at a directory containing images, compiled
-artifacts, etc. is safe.
+It does not execute or import the files it scans.
 
-**Example output:**
+┌─────────────────────────────────────┐
+│           secretshield scan         │
+├─────────────────────────────────────┤
+│ Source / config files               │
+│            │                        │
+│            ▼                        │
+│     Detection engine                │
+│            │                        │
+│      ┌─────┴─────┐                  │
+│      ▼           ▼                  │
+│   Safe ✓      Secret ✗              │
+└─────────────────────────────────────┘
 
-```text
+By default, common non-source directories such as .git, node_modules, virtual environments, build directories, and caches are skipped. Binary files are also ignored automatically.
+
+Supported file types
+
+SecretShield can scan common:
+
+Python
+
+JavaScript / JSX
+
+TypeScript / TSX
+
+HTML
+
+CSS / SCSS
+
+Vue
+
+Svelte
+
+JSON / JSONC
+
+YAML
+
+TOML / INI / CFG / CONF
+
+.env and .env.*
+
+Shell scripts (.sh, .bash, .zsh)
+
+Windows scripts (.ps1, .bat, .cmd)
+
+XML
+
+Markdown / plain text
+
+SQL
+
+GraphQL
+
+Extensionless text files such as Dockerfile and Makefile
+
+Example
+
 SecretShield scan
 
 ✗ src/app.js:82
@@ -173,153 +235,173 @@ SecretShield scan
 ✗ 1 potential secret(s) found
 
 Exit code: 1
-```
 
-If nothing is found:
+When nothing is found:
 
-```text
 SecretShield scan
 
 ✓ 143 files scanned
 ✓ No potential secrets found
 
 Exit code: 0
-```
 
-**Options:**
+🧰 Scan Options
 
-| Flag | Purpose |
-|---|---|
-| `--json` | Machine-readable JSON output instead of the text report (see below). Safe to pipe into CI — never contains secret values, matched text, or surrounding lines. |
-| `--include PATTERN` | Only scan files matching a glob pattern (filename or relative path). Repeatable. |
-| `--exclude PATTERN` | Skip files matching a glob pattern. Repeatable. Always wins over `--include` and the defaults. |
-| `--no-ignore` | Don't skip the default-ignored directories (`.git`, `node_modules`, etc.). |
-| `--entropy-threshold FLOAT` | Shannon entropy threshold for generic high-entropy detection (default `4.2`). |
+Option
 
-**`--json` output shape:**
+Purpose
 
-```json
+--json
+
+Machine-readable JSON output
+
+--include PATTERN
+
+Only scan files matching a glob pattern
+
+--exclude PATTERN
+
+Exclude matching files; overrides includes and defaults
+
+--no-ignore
+
+Scan directories normally skipped by default
+
+--entropy-threshold FLOAT
+
+Tune generic high-entropy detection; default is 4.2
+
+--fix
+
+Start the interactive repair flow
+
+--include and --exclude can be repeated.
+
+JSON output
+
 {
   "files_scanned": 143,
   "matches": [
-    {"file": "src/app.js", "line": 82, "kind": "bearer_token"}
+    {
+      "file": "src/app.js",
+      "line": 82,
+      "kind": "bearer_token"
+    }
   ],
   "secrets_found": 1
 }
-```
 
-Exit code is `1` if `secrets_found > 0`, `0` otherwise — identical logic
-to the text output, so `scan` works the same way as a CI gate either way.
+JSON output is safe for CI because it contains locations and secret types, not secret values or surrounding source text.
 
-Obvious documentation placeholders (`your_api_key_here`, `changeme`,
-`xxxxxxxx`, and similar) are filtered out of scan results so they don't
-create noise — this filtering is narrow and only applies to `scan`
-output, not to runtime redaction, so it never risks hiding a real secret
-just because it resembles a placeholder pattern.
+Exit codes
 
----
+0 → no potential secrets found
+1 → one or more potential secrets found
 
-**`scan` is static analysis; `run` (and the automatic protection on
-import) is runtime redaction.** They are separate, complementary
-features:
+That makes scan suitable for automated security gates.
 
-```text
-Runtime protection:
-Protects what a running Python application writes to stdout,
-stderr, and logging, live, as it happens.
+🔧 Auto-Fix with --fix
 
-Static scanning:
-Searches source/configuration files on disk -- in any of the
-supported languages -- for likely exposed secrets without
-executing or importing them.
-```
+Found a secret in your Python source?
 
-## Configuration
+Instead of manually moving it, try:
 
-```python
-import secretshield
-
-secretshield.configure(
-    enabled=True,             # master on/off switch
-    redact_with="********",   # placeholder used in place of a secret
-    entropy_threshold=4.2,    # bits/char threshold for generic detection
-    notify=True,              # print the "potential secret" warning
-)
-```
-
-Sensible defaults mean most projects need zero configuration.
-
-## Auto-Fix -- moving secrets into `.env`
-
-```bash
 secretshield scan . --fix
-```
 
-`--fix` adds an *interactive* repair step on top of the normal scan.
-For each detected secret, SecretShield asks whether to move it into a
-local `.env` file:
+SecretShield adds an interactive repair step to the normal scan.
 
-```text
+Example:
+
 Secret 1/1 detected
 File: app.py
 Line: 5
 Detected value: ********
 
 Would you like me to move this secret to a local .env file automatically? [y/N]
-```
 
-If you confirm, this:
+If you confirm, a safe simple assignment such as:
 
-```python
 API_KEY = "actual-secret-value"
-```
 
-becomes:
+can become:
 
-```python
 import os
 
 API_KEY = os.getenv("API_KEY")
-```
 
-with the real value moved into `.env` (created if missing, and never
-overwritten -- new variables are only ever appended), `.gitignore`
-updated to exclude `.env` if it isn't already, and `.env.example`
-updated with a blank placeholder (`API_KEY=`, never the real value) so
-you can safely commit the example file.
+while the real value is moved into .env.
 
-**Auto-Fix is conservative by design.** It only rewrites Python, and
-only lines that are unambiguously a simple assignment --
-`API_KEY = "..."`. Anything less certain -- a value inside a dict, an
-f-string, a function call argument, a non-Python file -- is reported
-but left untouched:
+What --fix handles
 
-```text
+When a fix is accepted, SecretShield:
+
+creates .env if necessary
+
+never overwrites existing .env content
+
+appends new variables safely
+
+adds .env to .gitignore if needed
+
+updates .env.example
+
+puts only a blank placeholder in .env.example
+
+validates the result
+
+rolls the source file back if validation fails
+
+Conservative by design
+
+--fix does not blindly rewrite code.
+
+It only automatically rewrites Python when the secret is an unambiguous simple assignment such as:
+
+API_KEY = "..."
+
+More complicated cases are reported but left untouched:
+
+config = {"api_key": "..."}
+
+print(f"key={API_KEY}")
+
+send_request(token="...")
+
+And non-Python files are never automatically rewritten.
+
+If SecretShield cannot safely determine the replacement:
+
 Secret detected, but SecretShield could not safely determine how to
 replace it automatically.
 
 No changes were made.
-```
 
-Every fix is validated after being written (confirming the secret is
-gone from the source and present in `.env`); if anything about a fix
-fails, that file is rolled back to its original content rather than
-left half-modified. `--fix` only prompts in a real interactive
-terminal -- in CI or any non-interactive environment, it makes no
-changes and does not hang waiting for input.
+CI-safe
 
-## Git pre-commit hook
+--fix only prompts in a real interactive terminal.
 
-```bash
+In CI or another non-interactive environment:
+
+no files are modified
+
+SecretShield does not wait for input
+
+the process will not hang
+
+🪝 Git Pre-Commit Hook
+
+Catch secrets before they become a commit.
+
+Install the hook:
+
 secretshield install-hook
-```
 
-Installs a hook that scans **staged file contents** (not the whole
-working tree, and not what's merely on disk if you've only partially
-staged a file) before every commit, blocking it if a likely secret is
-found:
+Now every commit scans the staged file contents.
 
-```text
+That distinction matters: SecretShield scans what you are actually committing, not merely everything sitting in your working directory.
+
+Example:
+
 SecretShield: scanning staged files...
 
 ✗ Potential secret detected
@@ -331,166 +413,382 @@ Type: API token
 Commit blocked.
 
 Remove the secret from the staged changes and try again.
-```
 
-If a `pre-commit` hook already exists, SecretShield never overwrites
-it: the original is backed up to `pre-commit.secretshield-backup` and
-wrapped so both run on every commit. Remove SecretShield's hook (and
-automatically restore any hook it wrapped) with:
+Existing hooks are protected
 
-```bash
+If you already have a pre-commit hook, SecretShield does not simply overwrite it.
+
+It:
+
+backs up the existing hook
+
+wraps it with SecretShield
+
+runs both on future commits
+
+can restore the original when SecretShield is removed
+
+Uninstall:
+
 secretshield uninstall-hook
-```
 
-## GitHub Actions
+🤖 GitHub Actions
 
-```bash
+SecretShield can generate a ready-to-use GitHub Actions workflow:
+
 secretshield github-action
-```
 
-Generates `.github/workflows/secretshield.yml`, a workflow that installs
-SecretShield and runs `secretshield scan .` on every push and pull
-request, failing the check if a potential secret is found. Won't
-overwrite an existing workflow file unless you pass `--force`.
+This creates:
 
-## Detection methods
+.github/
+└── workflows/
+    └── secretshield.yml
 
-`secretshield` combines two strategies:
+The workflow installs SecretShield and runs:
 
-1. **Known-format pattern matching** — regexes tuned to the shape of
-   common credential formats: AWS access keys, GitHub tokens, OpenAI-style
-   keys, Slack tokens, Stripe keys, Google API keys, JWTs, bearer tokens,
-   PEM-style private-key blocks, and generic `key = value` pairs whose
-   label looks like `api_key`, `secret`, `token`, `password`, etc.
-2. **Generic high-entropy detection** — a Shannon-entropy check over
-   long, non-dictionary-like character runs, used to catch random-looking
-   secrets that don't match a known format. This is intentionally used
-   as a *supplement*, not the primary mechanism, because entropy alone
-   produces far too many false positives on things like hashes, UUIDs,
-   and encoded binary data that aren't secrets.
+secretshield scan .
 
-## Architecture
+on:
 
-```text
+every push
+
+every pull request
+
+If a potential secret is detected, the workflow fails.
+
+Existing workflow protection
+
+SecretShield will not overwrite an existing secretshield.yml by default.
+
+If you intentionally want to replace it:
+
+secretshield github-action --force
+
+The complete protection chain
+
+        👨‍💻 Write code
+             │
+             ▼
+      🛡️ Runtime Shield
+             │
+             ▼
+       🔎 Local Scan
+             │
+             ▼
+        🔧 --fix
+             │
+             ▼
+        🪝 Git Hook
+             │
+             ▼
+       📦 git commit
+             │
+             ▼
+       ☁️ GitHub Actions
+             │
+        ┌────┴────┐
+        ▼         ▼
+       ✓ Pass    ✗ Block
+
+🧠 How Detection Works
+
+SecretShield combines two detection strategies.
+
+1. Known-format pattern matching
+
+It uses patterns tuned for credential-shaped data including:
+
+AWS access keys
+
+GitHub tokens
+
+OpenAI-style keys
+
+Slack tokens
+
+Stripe keys
+
+Google API keys
+
+JWTs
+
+Bearer tokens
+
+PEM-style private keys
+
+generic credential assignments such as api_key, secret, token, and password
+
+2. Generic high-entropy detection
+
+Some secrets do not follow a recognizable format.
+
+SecretShield therefore also checks long, random-looking character sequences using Shannon entropy.
+
+Entropy is intentionally a supplement rather than the primary detector because hashes, UUIDs, encoded data, and other harmless strings can also look random.
+
+⚙️ Configuration
+
+Most projects need no configuration.
+
+For custom behavior:
+
+import secretshield
+
+secretshield.configure(
+    enabled=True,
+    redact_with="********",
+    entropy_threshold=4.2,
+    notify=True,
+)
+
+Setting
+
+Purpose
+
+enabled
+
+Master runtime protection switch
+
+redact_with
+
+Replacement text used for detected secrets
+
+entropy_threshold
+
+Threshold for generic entropy detection
+
+notify
+
+Controls the potential-secret warning
+
+💻 CLI
+
+secretshield --help
+secretshield --version
+
+Run an existing script with protection
+
+secretshield run app.py [args...]
+
+This executes app.py as __main__ while protecting its stdout, stderr, and logging output.
+
+Useful when you want runtime protection without editing the application source.
+
+Scan
+
+secretshield scan .
+secretshield scan src/
+secretshield scan app.py
+secretshield scan . --json
+secretshield scan . --fix
+
+Git hook
+
+secretshield install-hook
+secretshield uninstall-hook
+
+GitHub Actions
+
+secretshield github-action
+secretshield github-action --force
+
+🏗️ Architecture
+
 secretshield/
-├── patterns.py       # regexes for known secret formats
-├── detector.py        # detect(): pattern + entropy matching -> Match objects
-├── redactor.py         # redact(): turns Match spans into "********"
-├── config.py            # configure()/get_config(): runtime settings
-├── notifications.py      # safe, secret-free console/desktop warnings
-├── guardian.py             # stdout/stderr wrapping + logging record-factory hook
-├── cli.py                    # `secretshield` command-line entry point
-├── autofix/                    # interactive scan --fix
-│   ├── fixer.py                  # orchestration, atomic writes, rollback
-│   ├── python.py                  # ast-based safe-assignment detection
-│   ├── env.py                      # safe .env / .env.example handling
-│   └── gitignore.py                 # ensures .env stays out of Git
-├── git/                                # pre-commit hook install/uninstall
-│   └── hooks.py
-└── github/                               # GitHub Actions workflow generation
-    └── actions.py
-```
+│
+├── patterns.py              # Known secret-format patterns
+├── detector.py              # Pattern + entropy detection
+├── redactor.py              # Match spans → redacted text
+├── config.py                # Runtime configuration
+├── notifications.py         # Safe warning messages
+├── guardian.py              # stdout/stderr + logging protection
+├── cli.py                   # CLI entry point
+│
+├── autofix/
+│   ├── fixer.py             # Fix orchestration + rollback
+│   ├── python.py            # AST-based safe assignments
+│   ├── env.py               # .env / .env.example handling
+│   └── gitignore.py         # Keeps .env out of Git
+│
+├── git/
+│   └── hooks.py             # Hook installation/removal
+│
+└── github/
+    └── actions.py           # GitHub Actions workflow generation
 
-Key design points:
+Design highlights
 
-* **Stream wrapping**, not monkey-patching `print`: `sys.stdout` and
-  `sys.stderr` are replaced with a thin wrapper object that redacts on
-  `write()` and delegates everything else (`flush`, `isatty`, attribute
-  access) to the original stream.
-* **Logging protection** hooks `logging.setLogRecordFactory`, not a
-  `Filter` on the root logger. Filters attached to the root logger are
-  only consulted by the logger that originated a given call, so a
-  root-only filter would miss records from `logging.getLogger(__name__)`
-  child loggers. The record factory is invoked for every `LogRecord`
-  created anywhere in the process, so both `record.msg` (f-strings /
-  pre-formatted messages) and `record.args` (`%s`-style lazy arguments)
-  are reliably covered regardless of logger hierarchy.
-* **Re-entrancy guards** prevent secretshield's own warning output from
-  being fed back into detection/logging and causing recursive loops.
-* Detection and redaction failures are caught and swallowed — a bug in
-  secretshield should never crash or block the host application's
-  normal output.
+Stream wrapping
 
-## Testing
+SecretShield wraps sys.stdout and sys.stderr rather than monkey-patching print().
 
-```bash
+Reliable logging coverage
+
+Logging protection uses logging.setLogRecordFactory, allowing SecretShield to cover both:
+
+logger.info("token=%s", token)
+
+and:
+
+logger.info(f"token={token}")
+
+across logger hierarchies.
+
+Re-entrancy protection
+
+SecretShield's own warning messages are protected from recursively triggering the detector.
+
+Fail-safe behavior
+
+Detection and redaction failures are caught so a problem inside SecretShield does not crash or block the host application.
+
+Atomic auto-fixing
+
+--fix validates its changes and rolls a file back if a fix cannot be safely completed.
+
+🎥 Demo
+
+See SecretShield in action:
+
+
+
+▶️ Watch the full demo on YouTube
+
+🧪 Testing
+
+Install development dependencies:
+
 pip install -e ".[dev]"
+
+Run the test suite:
+
 pytest
-```
 
-The test suite covers known-token detection, entropy detection, false
-positives, single/multiple/repeated secrets, multiline text, stdout,
-stderr, logging (`%s` args and f-strings), enable/disable idempotency,
-and stream restoration. All secrets used in tests and examples are fake.
+Tests cover:
 
-## Limitations
+known-token detection
 
-`secretshield` protects **Python's own `stdout`, `stderr`, and `logging`
-output within the current process.** It is a helpful safety net, not a
-comprehensive security boundary. Specifically, it does **not**:
+entropy detection
 
-* Prevent secrets from appearing in **screenshots** or screen recordings.
-* Prevent **clipboard** leaks.
-* Prevent secrets written via **arbitrary file writes** (e.g. `open(...).write(...)`,
-  `json.dump`, writing to a database).
-* Protect **other applications** or processes outside this Python
-  interpreter.
-* Redact output from **arbitrary subprocesses** — only output written
-  through this process's own `sys.stdout`/`sys.stderr`/`logging` is
-  covered, not everything a spawned subprocess itself prints to its own
-  inherited file descriptors before Python sees it.
-* Prevent **network leaks** (secrets sent over HTTP, sockets, etc.).
-* Catch **every possible way** a secret can leave a computer. Detection
-  is pattern- and entropy-based and can miss unusual or obfuscated
-  formats, and can occasionally over- or under-match.
+false positives
 
-Treat `secretshield` as a defense-in-depth safety net for accidental
-local exposure during development and debugging — not as a substitute
-for proper secret management (vaults, environment isolation, `.gitignore`
-discipline, secret scanning in CI, least-privilege credentials, etc.).
+single, multiple, and repeated secrets
 
-**Auto-Fix (`--fix`)** only rewrites Python, and only when a line is
-unambiguously a simple `NAME = "value"` assignment (checked via Python's
-own `ast` module, not a regex). Secrets inside dicts, f-strings,
-function-call arguments, or any other language are reported but never
-automatically rewritten — you'll need to fix those by hand.
+multiline text
 
-**The pre-commit hook** invokes the `secretshield` command by name, so
-it needs to be resolvable on `PATH` at commit time. If you installed
-SecretShield inside a virtual environment, make sure that environment
-is active (or `secretshield` is otherwise on `PATH`) whenever you run
-`git commit` — otherwise the hook itself will fail to run rather than
-silently skip the scan.
+stdout
 
-## Security considerations
+stderr
 
-* secretshield performs **no network calls** and collects **no
-  telemetry**. All detection and redaction happens locally, in-process.
-* Desktop notifications (if you wire up your own backend beyond the
-  built-in best-effort `notify-send`/`osascript` calls) are optional and
-  fail silently if unavailable — they never crash the host application.
-* Because detection is heuristic, it can produce false negatives (a real
-  secret slips through) or false positives (harmless text gets redacted).
-  Tune `entropy_threshold` and, where needed, extend `patterns.py` for
-  your own credential formats.
+logging
 
-## Contributing
+%s logging arguments
 
-Issues and pull requests are welcome. Please:
+f-string logging
 
-1. Add tests for any new detection pattern or behavior change.
-2. Use only fake/example credentials in tests, examples, and docs —
-   never real secrets.
-3. Keep the standard-library-only dependency policy unless there's a
-   strong reason to add a dependency, and discuss it in an issue first.
-4. Run `pytest` before opening a PR.
+enable/disable behavior
 
-## License
+stream restoration
 
-MIT — see [LICENSE](LICENSE).
+All secrets used in tests and examples are fake.
 
----
+📁 Examples
 
-## [ ☕](https://github.com/sponsors/Sam3360/) Get me a coffee
+The repository includes:
 
-If you find this project useful, consider [supporting its development through GitHub Sponsors](https://github.com/sponsors/Sam3360/).
+examples/
+├── basic.py
+└── logging_demo.py
+
+Run them with:
+
+python examples/basic.py
+python examples/logging_demo.py
+
+🔐 Security & Privacy
+
+SecretShield is designed to stay local.
+
+🚫 No network calls
+
+🚫 No telemetry
+
+🚫 No secret collection
+
+✅ Detection happens locally
+
+✅ Redaction happens in-process
+
+✅ Scan output avoids printing secret values
+
+SecretShield's own warnings and exceptions are designed not to expose the detected secret value.
+
+⚠️ Limitations
+
+SecretShield is a defense-in-depth safety net, not a complete security boundary.
+
+It does not protect against every possible secret leak.
+
+Specifically, it does not automatically prevent:
+
+secrets appearing in screenshots or screen recordings
+
+clipboard leaks
+
+secrets written through arbitrary file operations
+
+leaks from other applications or processes
+
+all output produced directly by subprocesses
+
+network transmission of secrets
+
+every possible obfuscated or unusual secret format
+
+Detection is heuristic, so false positives and false negatives are possible.
+
+Use SecretShield alongside proper secret management, environment isolation, .gitignore discipline, CI scanning, and least-privilege credentials.
+
+⚠️ One Important Hook Note
+
+The Git pre-commit hook invokes:
+
+secretshield
+
+by name.
+
+If SecretShield was installed inside a virtual environment, make sure that environment is active — or that the command is otherwise available on PATH — when running git commit.
+
+Otherwise the hook may fail to run instead of silently skipping the scan.
+
+🤝 Contributing
+
+Issues and pull requests are welcome.
+
+When contributing:
+
+Add tests for new detection patterns or behavior changes.
+
+Use only fake credentials in tests, examples, and documentation.
+
+Keep the standard-library-only runtime dependency policy unless there is a strong reason to change it.
+
+Run pytest before opening a pull request.
+
+📜 License
+
+MIT — see LICENSE.
+
+☕ Support SecretShield
+
+If SecretShield is useful to you, consider supporting its development.
+
+<p align="center">
+  <a href="https://github.com/sponsors/Sam3360">
+    <strong>☕ Get me a coffee →</strong>
+  </a>
+</p>
+
+<p align="center">
+  Built with Python · Designed for developers · Made to catch secrets before they escape
+</p>
