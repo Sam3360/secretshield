@@ -96,30 +96,30 @@ Requires Python 3.10+.
 pip install secretshield
 
 For local development:
-
+```
 pip install -e ".[dev]"
-
+```
 No third-party runtime dependencies are required.
 
 🛡️ Runtime Protection
 
 Protection for Python's stdout, stderr, and logging is enabled when SecretShield is imported.
-
+```
 import secretshield
 
 api_key = "sk-example1234567890abcdefFAKEKEY"
 
 print("API key:", api_key)
-
+```
 Instead of exposing the value:
-
+```
 API key: ********
 ⚠ secretshield: Potential secret detected and redacted.
-
+```
 The real secret value is not included in SecretShield's warning messages or exceptions.
 
 Toggle protection
-
+```
 import secretshield
 
 secretshield.disable()
@@ -131,13 +131,13 @@ secretshield.enable()
 # protection is back on
 
 secretshield.is_enabled()
-
+```
 enable() and disable() are safe to call repeatedly.
 
 🔎 Detect & Redact Text Directly
 
 You can use the detection engine without routing text through a terminal or logger.
-
+```
 from secretshield import detect, redact
 
 matches = detect("aws_key=AKIAABCDEFGHIJKLMNOP")
@@ -145,23 +145,23 @@ matches = detect("aws_key=AKIAABCDEFGHIJKLMNOP")
 safe_text, was_redacted = redact(
     "aws_key=AKIAABCDEFGHIJKLMNOP"
 )
-
+```
 detect() returns match information, while redact() gives you the sanitized text and whether anything was changed.
 
 🔍 Static Scanning
 
 Scan a project:
-
+```
 secretshield scan .
-
+```
 Or a single file:
-
+```
 secretshield scan path/to/file.py
-
+```
 Scan a source directory and return JSON:
-
+```
 secretshield scan src/ --json
-
+```
 Important difference
 
 scan is static analysis.
