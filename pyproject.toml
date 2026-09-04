@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secretshield"
+version = "0.4.2"
+description = "Stop secrets before they leak -- runtime redaction, multi-language scanning, auto-fix, Git hooks, and CI, all in one CLI."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Samarth Chugh (Sam3360)" },
+]
+keywords = ["security", "secrets", "redaction", "logging", "stdout", "credentials"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "tomli>=2.0; python_version < \"3.11\"",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Sam3360/secretshield"
+Repository = "https://github.com/Sam3360/secretshield"
+Issues = "https://github.com/Sam3360/secretshield/issues"
+
+[project.scripts]
+secretshield = "secretshield.cli:main"
+ss = "secretshield.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["secretshield*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
