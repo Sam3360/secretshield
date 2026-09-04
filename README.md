@@ -7,7 +7,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/secretshield?color=blue)](https://pypi.org/project/secretshield/)
 [![Python versions](https://img.shields.io/pypi/pyversions/secretshield)](https://pypi.org/project/secretshield/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/secretshield)](https://pypi.org/project/secretshield/)
+[![PyPI Downloads](https://api.pepy.tech/badge/secretshield/month)](https://pypi.org/project/secretshield/)
 [![License: MIT](https://img.shields.io/pypi/l/secretshield)](LICENSE)
 
 [Install](#installation) · [Demo](#demo) · [Quick start](#quick-start) · [Features](#what-secretshield-does) · [Docs below](#cli-reference)
