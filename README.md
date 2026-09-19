@@ -80,7 +80,7 @@ runs locally, in your own process.
 
 For the full command reference, configuration options, and exactly how
 Auto-Fix decides what's safe to rewrite, see the
-**[usage guide](https://github.com/Sam3360/secretshield/blob/main/USAGE.md)**.
+**[usage guide](https://github.com/Sam3360/secretshield/blob/main/USAGE.md)**. 
 
 ## Limitations
 
