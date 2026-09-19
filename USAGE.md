@@ -1,4 +1,4 @@
-# SecretShield — Usage Guide
+# SecretShield — Usage Guide 
 
 This is the detailed manual for SecretShield. For a quick overview,
 see [`README.md`](README.md).
