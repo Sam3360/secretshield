@@ -6,7 +6,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/secretshield?color=blue)](https://pypi.org/project/secretshield/)
 [![Python versions](https://img.shields.io/pypi/pyversions/secretshield)](https://pypi.org/project/secretshield/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/secretshield)](https://pypi.org/project/secretshield/)
+[![PyPI downloads](https://img.shields.io/badge/dynamic/json?color=orange&label=PyPI%20downloads&query=downloads&url=https://api.pepy.tech/api/v2/projects/secretshield&suffix=%2Fmonth)](https://pypi.org/project/secretshield/)
 [![License: MIT](https://img.shields.io/pypi/l/secretshield)](LICENSE)
 
 [Install](#install) · [Demo](#demo) · [Try it](#try-it) · [Full usage guide →](https://github.com/Sam3360/secretshield/blob/main/USAGE.md)
