@@ -119,3 +119,11 @@ If you find this project useful, consider [supporting its development through Gi
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+
+
+## Homepage
+
+Visit the official SecretShield homepage for an overview of the project, features, releases, and more:
+
+**🌐 [therealsecretshield.freebuff.app](https://therealsecretshield.freebuff.app/)**
