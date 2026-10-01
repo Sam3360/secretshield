@@ -9,7 +9,7 @@
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/secretshield?period=total&units=INTERNATIONAL_SYSTEM&left_color=GREY&right_color=RED&left_text=downloads%2Fmonth)](https://pepy.tech/projects/secretshield)
 [![License: MIT](https://img.shields.io/pypi/l/secretshield)](LICENSE)
 
-[Install](#install) · [Demo](#demo) · [Try it](#try-it) · [Homepage 🌐](https://therealsecretshield.freebuff.app/) · [Full usage guide →](https://github.com/Sam3360/secretshield/blob/main/USAGE.md)
+[Install](#install) · [Demo](#demo) · [Try it](#try-it) · [Homepage](https://therealsecretshield.freebuff.app/) · [Full usage guide →](https://github.com/Sam3360/secretshield/blob/main/USAGE.md)
 
 </div>
 
