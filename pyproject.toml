@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secretshield"
-version = "0.9.0"
+version = "0.10.0"
 description = "Stop secrets before they leak -- runtime redaction, multi-language scanning, auto-fix, Git hooks, and CI, all in one CLI."
 readme = "README.md"
 license = "MIT"

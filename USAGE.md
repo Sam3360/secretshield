@@ -9,6 +9,7 @@ see [`README.md`](README.md).
 - [Scanning](#scanning)
 - [Auto-Fix](#auto-fix)
 - [Git hooks](#git-hooks)
+- [SARIF export](#sarif-export)
 - [GitHub Actions](#github-actions)
 - [Configuration](#configuration)
 - [Custom rules](#custom-rules)
@@ -159,6 +160,7 @@ changes or prompting.
 secretshield scan .                       # scan a directory (default: ".")
 secretshield scan app.py                  # scan a single file
 secretshield scan . --json                # machine-readable output
+secretshield scan . --format sarif --output secretshield.sarif   # SARIF 2.1.0 report
 secretshield scan . --fix                 # interactively move secrets to .env
 secretshield scan --staged                # scan Git-staged content
 secretshield scan --diff HEAD~1           # scan files changed since a ref
@@ -170,7 +172,9 @@ Flags:
 | Flag | What it does |
 |---|---|
 | `--entropy-threshold FLOAT` | Shannon entropy threshold for generic detection (default `4.2`, or the value from `secretshield.toml` if present) |
-| `--json` | Machine-readable JSON output |
+| `--json` | Machine-readable JSON output (same as `--format json`) |
+| `--format text\|json\|sarif` | Report format. `sarif` writes a SARIF 2.1.0 log (see [SARIF export](#sarif-export)). Overrides `[output] format` in `secretshield.toml`. |
+| `--output FILE` | Write the `json`/`sarif` report to `FILE` instead of stdout. Missing parent directories are created. Not valid with the default `text` format. |
 | `--include PATTERN` | Only scan files matching this glob (filename or relative path). Repeatable. |
 | `--exclude PATTERN` | Skip files matching this glob. Repeatable. Always wins over `--include`. |
 | `--no-ignore` | Don't skip the default-ignored directories (see below) |
@@ -181,7 +185,8 @@ Flags:
 
 Exit codes: `0` — no findings; `1` — findings present; `2` — a
 scanner/environment error (e.g. `--staged`/`--diff` used outside a Git
-repository).
+repository, or a report file that can't be written). Exit codes are the
+same for every report format.
 
 `--staged` and `--diff` both require running inside a Git repository.
 
@@ -206,7 +211,7 @@ See [Git hooks](#git-hooks).
 ### `secretshield github-action`
 
 ```bash
-secretshield github-action [--force]
+secretshield github-action [--force] [--sarif]
 ```
 
 See [GitHub Actions](#github-actions).
@@ -416,18 +421,166 @@ inside a virtual environment, that environment needs to be active — or
 `git commit`, or the hook itself will fail to run rather than silently
 skip the scan.
 
+## SARIF export
+
+[SARIF](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
+2.1.0 is the standard interchange format for static-analysis results.
+It's what GitHub Code Scanning ingests, and many IDEs and security
+dashboards read it too.
+
+```bash
+secretshield scan . --format sarif --output secretshield.sarif
+ss scan . --format sarif --output secretshield.sarif     # same thing
+secretshield scan . --format sarif                       # to stdout instead
+```
+
+The report is built from the same findings a normal scan produces, so
+everything that shapes a scan applies unchanged: `--include` /
+`--exclude`, `.secretshieldignore`, `secretshield.toml`, the
+[baseline](#secretshield-scan) (baselined findings are left out and counted in
+the run's `invocations[0].properties.ignoredByBaseline`), custom rules,
+`--staged`, `--diff`, and `--entropy-threshold`. Exit codes are
+unchanged (`0` clean, `1` findings, `2` error), so a SARIF scan can
+still gate a CI job.
+
+`--format sarif` can't be combined with `--fix` or `--baseline` (those
+commands don't produce a report) — that's an error (exit `2`) rather
+than a silently ignored flag. `--json` and `--format sarif` together are
+also an error. In `secretshield.toml`, `[output] format = "sarif"` works
+the same as passing `--format sarif`; the command-line flag wins.
+
+### What's in the report
+
+- **Rules.** Every detector is a SARIF rule with a stable ID
+  `secretshield.<kind>` (for example `secretshield.github_token`),
+  a short and full description, remediation guidance (`help`), CWE-798
+  and category tags, and a precision rating. Custom rules from
+  `.secretshield-rules.toml` appear as `secretshield.custom.<name-slug>`.
+- **Severity.** Each rule has a SARIF `level` and a GitHub
+  `security-severity` score, which GitHub shows as Critical / High /
+  Medium / Low:
+
+  | Rule | `level` | `security-severity` | GitHub label |
+  |---|---|---|---|
+  | `private_key_block`, `aws_secret_access_key` | `error` | 9.5 | Critical |
+  | `github_token` | `error` | 8.5 | High |
+  | `openai_api_key`, `slack_token`, `stripe_key` | `error` | 8.0 | High |
+  | `aws_access_key_id`, `bearer_token`, custom rules | `error` | 7.5 | High |
+  | `google_api_key` | `error` | 7.0 | High |
+  | `jwt` | `warning` | 6.5 | Medium |
+  | `generic_labeled_secret` | `warning` | 6.0 | Medium |
+  | `high_entropy` | `note` | 3.5 | Low |
+
+  Heuristic rules (`generic_labeled_secret`, `high_entropy`, `jwt`) are
+  scored lower because they produce more false positives. Custom rules
+  have no severity of their own, so they all get the conservative
+  `error` mapping.
+- **Locations.** Each result has one location: the file as a
+  repository-relative, forward-slash, percent-encoded URI, plus
+  `startLine`, `startColumn`, `endLine`, and `endColumn` (1-based, end
+  column exclusive, counted in UTF-16 code units). A multi-line private
+  key spans from its `BEGIN` line to its `END` line.
+- **Messages.** Short and fixed per rule, e.g. *Potential secret
+  detected: GitHub token. Rotate the credential and remove it from
+  source code.* — the first sentence is what GitHub shows as the alert
+  title.
+- **Ordering.** Results are sorted by file, line, and column, so
+  scanning the same tree twice gives byte-identical output, with no
+  timestamps or absolute paths.
+
+### Secret values are never included
+
+The report builder is only ever given a finding's file, rule, and
+position — never the matched text — so there is no message, snippet,
+property, or fingerprint that could contain a secret. That includes no
+`region.snippet` and no `partialFingerprints`: the baseline's finding
+IDs are hashes of the secret value, so they are deliberately not
+reused. Errors writing the report name only the path and the operating
+system's reason. (GitHub's `upload-sarif` action computes its own
+`partialFingerprints` from your checked-out files at upload time; that
+happens on the runner, not in the report SecretShield writes.)
+
+### Notes
+
+- Run the scan from the repository root with a path inside it (`.`), so
+  locations are relative to the repo — GitHub matches alerts to files by
+  that path. A scan target outside the current directory is reported
+  with `file:` URIs, which GitHub can't map to repository files.
+- `.sarif` isn't a scanned file type, so a report written into the tree
+  isn't re-scanned on the next run.
+- A custom rule whose name is the same as a built-in kind (for example
+  `jwt`) can't be told apart from it in findings, and is reported as the
+  built-in rule.
+
 ## GitHub Actions
 
 ```bash
-secretshield github-action [--force]
+secretshield github-action [--force] [--sarif]
 ```
 
 Writes `.github/workflows/secretshield.yml`. Won't overwrite an
-existing workflow file unless `--force` is passed. The generated
-workflow runs on every `push` and `pull_request`, installs
+existing workflow file unless `--force` is passed.
+
+**Default workflow.** Runs on every `push` and `pull_request`, installs
 SecretShield via `pip install secretshield`, and runs
 `secretshield scan .`, failing the check if a potential secret is
 found.
+
+**With `--sarif`.** The same scan, plus an upload of the results to
+GitHub Code Scanning so findings show up as alerts in the repository's
+**Security** tab and as annotations on pull requests:
+
+```yaml
+jobs:
+  secretshield:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python -m pip install secretshield
+      - name: Scan repository
+        run: secretshield scan . --format sarif --output secretshield.sarif
+      - name: Upload SARIF to GitHub Code Scanning
+        if: ${{ always() && hashFiles('secretshield.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: secretshield.sarif
+          category: secretshield
+```
+
+(`--sarif` writes the complete file, including the `name:`/`on:`
+header; the above shows the part that differs.) You can also add the
+two SARIF steps to a workflow you already have.
+
+How it fits together:
+
+- The scan step still exits `1` when it finds something, so the job
+  fails exactly as before. `if: always()` makes the upload run anyway;
+  without it a failing scan would skip the upload and nothing would
+  reach Code Scanning. The `hashFiles` check skips the upload when the
+  scan never produced a report (for instance after a scanner error)
+  instead of failing on a missing file.
+- `security-events: write` is required to upload. Pull requests from
+  forks get a read-only token, so the upload step can't succeed for
+  them.
+- Code Scanning is available on public repositories, and on private
+  repositories with GitHub Code Security (Advanced Security) enabled.
+  The default workflow has none of these requirements, which is why
+  `--sarif` is opt-in.
+- `category` keeps SecretShield's alerts separate from other tools'. Use
+  a different value per job if you upload more than one SecretShield
+  report for the same commit (for example in a matrix).
+- The workflow uses `upload-sarif@v4`. GitHub Enterprise Server 3.19
+  can't run v4; on that version use `@v3`.
+- GitHub accepts at most 5,000 results per upload (the highest-severity
+  ones are kept) and a 10 MB gzip-compressed file. Use ignore rules or a
+  [baseline](#secretshield-scan) for noisy repositories.
 
 ## Configuration
 
@@ -455,6 +608,10 @@ patterns = [
 [output]
 format = "text"
 ```
+
+`[output] format` accepts `text`, `json`, or `sarif` (SARIF goes to
+stdout; use `--output` on the command line to write a file). The
+`--format` / `--json` flags override it.
 
 `secretshield init` can generate a starting file for you.
 
@@ -678,6 +835,11 @@ detect('aX9pQ2zM7vL0rT4wK8yB1nD6fH3jC5sE')
   see [Auto-Fix](#auto-fix) above.
 - The pre-commit hook needs `secretshield` resolvable on `PATH` at
   commit time.
+- SARIF export has no `partialFingerprints` or code snippets by design
+  (see [SARIF export](#sarif-export)); alert tracking across commits
+  relies on GitHub's `upload-sarif` action computing fingerprints.
+  Results in files reached through symlinks are reported under the
+  symlink's path, which GitHub may not be able to display.
 - Detection is heuristic. It can produce false negatives (a real
   secret in an unusual format slips through) and, more rarely, false
   positives (something that merely looks like a secret gets flagged).

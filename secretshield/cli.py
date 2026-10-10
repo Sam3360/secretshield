@@ -487,7 +487,40 @@ def _run_scan(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    json_output = bool(args.json) or (project_cfg.output_format == "json")
+    cli_format = getattr(args, "format", None)
+    output_file = getattr(args, "output", None)
+    if args.json and cli_format not in (None, "json"):
+        print(
+            f"secretshield: error: --json conflicts with --format {cli_format}",
+            file=sys.stderr,
+        )
+        return 2
+    if cli_format is not None:
+        report_format = cli_format
+    elif args.json:
+        report_format = "json"
+    elif project_cfg.output_format in ("json", "sarif"):
+        report_format = project_cfg.output_format
+    else:
+        report_format = "text"
+    json_output = report_format == "json"
+    sarif_output = report_format == "sarif"
+
+    if output_file is not None and report_format == "text":
+        print(
+            "secretshield: error: --output requires --format json or --format sarif",
+            file=sys.stderr,
+        )
+        return 2
+    if cli_format == "sarif" or output_file is not None:
+        for flag in ("fix", "baseline"):
+            if getattr(args, flag, False):
+                print(
+                    f"secretshield: error: --{flag} cannot be combined with "
+                    f"--format sarif or --output",
+                    file=sys.stderr,
+                )
+                return 2
 
     target = Path(args.path)
     using_explicit_source = bool(getattr(args, "staged", False) or getattr(args, "diff", None))
@@ -507,7 +540,11 @@ def _run_scan(args: argparse.Namespace) -> int:
     all_findings: list[dict] = []  # each: {"file": str, "line": int, "kind": str}
     matches_by_file: dict[str, list] = {}
     matches_with_context: list[tuple[str, int, object]] = []  # (file, line, Match)
-    show_progress = _progress_supported() and not json_output
+    # Only filled for --format sarif: id(match) -> (startLine, startColumn,
+    # endLine, endColumn). Keeps the tuple shape above (used by baseline
+    # handling) unchanged and costs nothing for text/json scans.
+    sarif_regions: dict[int, tuple[int, int, int, int]] = {}
+    show_progress = _progress_supported() and not (json_output or sarif_output)
 
     for display_path, text in _iter_scan_sources(args, target, include_patterns, exclude_patterns):
         files_scanned += 1
@@ -525,6 +562,10 @@ def _run_scan(args: argparse.Namespace) -> int:
             line_no = _line_number_for_offset(text, match.start)
             all_findings.append({"file": display_path, "line": line_no, "kind": match.kind})
             matches_with_context.append((display_path, line_no, match))
+            if sarif_output:
+                from .sarif import compute_region
+
+                sarif_regions[id(match)] = compute_region(text, match.start, match.end)
 
     _progress_clear(show_progress)
 
@@ -575,6 +616,16 @@ def _run_scan(args: argparse.Namespace) -> int:
         )
         return 1 if summary.fixed < summary.detected else 0
 
+    if sarif_output:
+        return _emit_sarif(
+            matches_with_context,
+            sarif_regions,
+            custom_rules,
+            files_scanned,
+            ignored_by_baseline,
+            output_file,
+        )
+
     if json_output:
         payload = {
             "files_scanned": files_scanned,
@@ -583,7 +634,14 @@ def _run_scan(args: argparse.Namespace) -> int:
         }
         if ignored_by_baseline:
             payload["ignored_by_baseline"] = ignored_by_baseline
-        print(json.dumps(payload, indent=2))
+        report = json.dumps(payload, indent=2)
+        if output_file is not None:
+            written = _write_report(output_file, report + "\n", "JSON")
+            if not written:
+                return 2
+            print(f"\u2713 JSON report written to {output_file} ({len(all_findings)} finding(s))")
+        else:
+            print(report)
         return 1 if all_findings else 0
 
     use_color = supports_color(sys.stdout)
@@ -611,6 +669,61 @@ def _run_scan(args: argparse.Namespace) -> int:
     exit_code = 1 if all_findings else 0
     print(f"\nExit code: {exit_code}")
     return exit_code
+
+
+def _write_report(output_file: str, content: str, label: str) -> bool:
+    """Write a report file, creating parent directories. Returns False (after
+    printing a one-line error to stderr) if it can't be written. The error
+    names only the path and the OS reason -- never report content."""
+    try:
+        path = Path(output_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
+    except OSError as exc:
+        reason = exc.strerror or type(exc).__name__
+        print(
+            f"secretshield: error: could not write {label} report to {output_file}: {reason}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def _emit_sarif(
+    matches_with_context: list,
+    sarif_regions: dict,
+    custom_rules: list,
+    files_scanned: int,
+    ignored_by_baseline: int,
+    output_file: str | None,
+) -> int:
+    """Build and emit the SARIF report from the findings the normal scan
+    pipeline already produced (after ignore rules and baseline filtering).
+    Exit codes match every other format: 1 if findings, else 0; 2 if the
+    report file can't be written."""
+    from .sarif import SarifFinding, build_sarif, dumps
+
+    findings = []
+    for file, line, match in matches_with_context:
+        region = sarif_regions.get(id(match)) or (line, 1, line, 1)
+        findings.append(SarifFinding(file, match.kind, *region))
+
+    log = build_sarif(
+        findings,
+        custom_rule_names=[r.name for r in custom_rules],
+        files_scanned=files_scanned,
+        ignored_by_baseline=ignored_by_baseline,
+    )
+    report = dumps(log)
+
+    if output_file is not None:
+        if not _write_report(output_file, report, "SARIF"):
+            return 2
+        print(f"\u2713 SARIF report written to {output_file} ({len(findings)} finding(s))")
+    else:
+        sys.stdout.write(report)
+    return 1 if findings else 0
 
 
 # --- `scan-staged` command (used by the pre-commit hook) ---------------------
@@ -707,7 +820,9 @@ def _cmd_uninstall_hook(args: argparse.Namespace) -> int:
 def _cmd_github_action(args: argparse.Namespace) -> int:
     from .github import generate_workflow
 
-    written, path = generate_workflow(Path.cwd(), force=args.force)
+    written, path = generate_workflow(
+        Path.cwd(), force=args.force, sarif=getattr(args, "sarif", False)
+    )
     if not written:
         print(
             f"secretshield: {path} already exists. Use --force to overwrite.",
@@ -1125,6 +1240,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output machine-readable JSON instead of human-readable text.",
     )
     scan_parser.add_argument(
+        "--format",
+        choices=("text", "json", "sarif"),
+        default=None,
+        help=(
+            "Report format: text (default), json (same as --json), or sarif "
+            "(SARIF 2.1.0, for GitHub Code Scanning and other SARIF tools). "
+            "Overrides the format set in secretshield.toml."
+        ),
+    )
+    scan_parser.add_argument(
+        "--output",
+        metavar="FILE",
+        default=None,
+        help=(
+            "Write the json/sarif report to FILE instead of stdout, e.g. "
+            "--format sarif --output secretshield.sarif. Missing parent "
+            "directories are created."
+        ),
+    )
+    scan_parser.add_argument(
         "--include",
         action="append",
         default=None,
@@ -1233,6 +1368,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Overwrite an existing workflow file if one is already present.",
+    )
+    github_action_parser.add_argument(
+        "--sarif",
+        action="store_true",
+        help=(
+            "Also upload results to GitHub Code Scanning as SARIF "
+            "(needs security-events: write; private repositories need "
+            "GitHub Code Security)."
+        ),
     )
     github_action_parser.set_defaults(func=_cmd_github_action)
 

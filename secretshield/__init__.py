@@ -23,7 +23,7 @@ from .detector import Match, detect
 from .guardian import disable, enable, is_enabled
 from .redactor import redact
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "__version__",
