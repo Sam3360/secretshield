@@ -1,0 +1,11 @@
+# Pinned tooling for building the standalone executables. These are build-time
+# only: SecretShield itself still has no runtime dependencies.
+#
+#   python -m pip install -r standalone/requirements-build.txt
+#
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
+altgraph==0.17.5
+packaging==26.3
+pefile==2024.8.26 ; sys_platform == "win32"
+macholib==1.16.4 ; sys_platform == "darwin"

@@ -1,0 +1,29 @@
+WHAT THIS INSTALLER DOES
+
+  - Installs SecretShield into the folder you choose on the next page. The
+    default is inside your own user profile, so no administrator rights are
+    needed.
+  - Optionally adds that folder to your PATH, so you can type "ss" or
+    "secretshield" in a new terminal window.
+  - Adds an uninstaller, listed under Settings > Apps.
+
+WHAT IT DOES NOT DO
+
+  - It does not install Python, run in the background, start with Windows,
+    change your projects, or send any data over the network.
+
+ABOUT THE WARNING WINDOWS MAY SHOW
+
+  This installer is not code-signed, so Windows SmartScreen may warn that the
+  publisher is unknown. If you want to check that the file is the one that was
+  published, compare its SHA-256 checksum with SHA256SUMS.txt on the official
+  release page (https://github.com/Sam3360/secretshield/releases). A matching
+  checksum shows the file was not damaged or altered in transit; it does not
+  prove who published it.
+
+UPGRADING AND UNINSTALLING
+
+  Running a newer installer upgrades in place. Uninstalling removes
+  SecretShield's own program files and the PATH entry this installer added.
+  Your projects, and any secretshield.toml, rules or baseline files inside
+  them, are never touched.

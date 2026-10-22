@@ -1,0 +1,258 @@
+# Builds the standalone SecretShield executables and the Windows installer,
+# tests the real built artifacts, and produces SHA256SUMS.txt.
+#
+# It NEVER publishes anything by itself:
+#   * It runs only for a pushed version tag (v*) or when started by hand.
+#   * Assets are uploaded as workflow artifacts. Download them from the run page,
+#     or start the workflow by hand on a tag with "attach_to_release" ticked to
+#     add them to a release that ALREADY exists (it refuses to overwrite assets).
+#   * Nothing here touches PyPI.
+#
+# Actions are pinned to full commit SHAs (the tag is in the comment).
+
+name: Build standalone release assets
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      attach_to_release:
+        description: "Attach the built assets to the EXISTING GitHub release for this tag (run this workflow on the tag; never overwrites existing assets)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  # Inno Setup is installed from the Chocolatey package that jrsoftware itself maintains.
+  INNO_SETUP_VERSION: "6.7.3"
+  PYTHONUTF8: "1"
+
+jobs:
+  checks:
+    name: Version, Python package and full test suite
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Versions agree (and match the tag, if building a tag)
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            python standalone/version.py --tag "$REF_NAME"
+          else
+            python standalone/version.py --check
+          fi
+      - name: Install test tooling (and Free Pascal to execute the installer's PATH logic)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fp-compiler strace
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest build twine
+      - name: Full test suite
+        run: python -m pytest -q
+      - name: Python distribution builds and passes twine check
+        run: |
+          python -m build
+          python -m twine check dist/*
+
+  build-windows:
+    name: Windows x64 (portable zip + installer)
+    needs: checks
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r standalone/requirements-build.txt
+          python -m pip install -e . pytest
+      - name: Build the standalone app (onedir) and portable zip
+        env:
+          SS_EXPECT_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: python standalone/build.py
+      - name: Test the BUILT executables (not the Python sources)
+        env:
+          SECRETSHIELD_FROZEN_BIN: ${{ github.workspace }}\dist\standalone\secretshield\secretshield.exe
+          SECRETSHIELD_FROZEN_ALIAS: ${{ github.workspace }}\dist\standalone\secretshield\ss.exe
+        run: python -m pytest tests/test_frozen_binary.py -q
+      - name: Packaging tests (includes the real Windows version-resource classes)
+        run: python -m pytest tests/test_packaging.py -q
+      - name: Install Inno Setup ${{ env.INNO_SETUP_VERSION }}
+        run: |
+          choco install innosetup --version=$env:INNO_SETUP_VERSION --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup install failed (exit $LASTEXITCODE)" }
+      - name: Build the installer, plus a throw-away older (0.0.1) installer for upgrade tests
+        run: |
+          pwsh -NoProfile -File standalone/windows/build-installer.ps1
+          if ($LASTEXITCODE -ne 0) { throw "installer build failed" }
+          pwsh -NoProfile -File standalone/windows/build-installer.ps1 -Version 0.0.1 `
+            -OutputName secretshield-test-older-setup -OutputDir dist/installer-test
+          if ($LASTEXITCODE -ne 0) { throw "older installer build failed" }
+      - name: Installer lifecycle test (install, upgrade, downgrade, uninstall, PATH)
+        run: |
+          $version = (python standalone/version.py).Trim()
+          pwsh -NoProfile -File standalone/windows/test-installer.ps1 `
+            -Installer dist/release/secretshield-windows-x64-setup.exe `
+            -OlderInstaller dist/installer-test/secretshield-test-older-setup.exe `
+            -PortableZip dist/release/secretshield-windows-x64-portable.zip `
+            -ExpectedVersion $version
+          if ($LASTEXITCODE -ne 0) { throw "installer lifecycle test failed" }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: assets-windows-x64
+          path: |
+            dist/release/secretshield-windows-x64-setup.exe
+            dist/release/secretshield-windows-x64-portable.zip
+          if-no-files-found: error
+
+  build-linux:
+    name: Linux x64 (single binary)
+    needs: checks
+    runs-on: ubuntu-22.04 # the oldest supported image, so the binary needs an older glibc
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y strace
+          python -m pip install --upgrade pip
+          python -m pip install -r standalone/requirements-build.txt
+          python -m pip install -e . pytest
+      - name: Build
+        env:
+          SS_EXPECT_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: python standalone/build.py
+      - name: Test the BUILT binary (includes the strace isolation and no-network checks)
+        env:
+          SECRETSHIELD_FROZEN_BIN: ${{ github.workspace }}/dist/release/secretshield-linux-x64
+        run: python -m pytest tests/test_frozen_binary.py -q
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: assets-linux-x64
+          path: dist/release/secretshield-linux-x64
+          if-no-files-found: error
+
+  build-macos:
+    name: macOS ${{ matrix.arch }} (single binary)
+    needs: checks
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel # long-term deprecated by GitHub; see docs
+            arch: x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r standalone/requirements-build.txt
+          python -m pip install -e . pytest
+      - name: Build
+        env:
+          SS_EXPECT_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: python standalone/build.py
+      - name: Show what was built (architecture and signature)
+        run: |
+          file dist/release/secretshield-macos-${{ matrix.arch }}
+          codesign -dv dist/release/secretshield-macos-${{ matrix.arch }} 2>&1 || true
+      - name: Test the BUILT binary
+        env:
+          SECRETSHIELD_FROZEN_BIN: ${{ github.workspace }}/dist/release/secretshield-macos-${{ matrix.arch }}
+        run: python -m pytest tests/test_frozen_binary.py -q
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: assets-macos-${{ matrix.arch }}
+          path: dist/release/secretshield-macos-${{ matrix.arch }}
+          if-no-files-found: error
+
+  checksums:
+    name: SHA-256 checksums
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: assets-*
+          merge-multiple: true
+          path: release-assets
+      - name: Write and verify SHA256SUMS.txt
+        run: |
+          ls -l release-assets
+          python standalone/build.py checksums release-assets
+          python standalone/build.py verify release-assets
+          cat release-assets/SHA256SUMS.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: release-assets/*
+          if-no-files-found: error
+
+  attach-to-release:
+    name: Attach to the existing GitHub release (manual, opt-in)
+    needs: checksums
+    if: github.event_name == 'workflow_dispatch' && inputs.attach_to_release && github.ref_type == 'tag'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # only this job can modify a release
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Upload assets (fails if the release is missing or an asset already exists)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" > /dev/null || { echo "No release exists for $TAG. Create it first; this job never creates or publishes one."; exit 1; }
+          # No --clobber: an existing asset of the same name makes this fail instead of being replaced.
+          gh release upload "$TAG" release-assets/*
