@@ -147,3 +147,8 @@ MIT — see [LICENSE](LICENSE).
 Visit the official SecretShield homepage for an overview of the project, features, releases, and more:
 
 **🌐 [therealsecretshield.freebuff.app](https://therealsecretshield.freebuff.app/)**
+
+
+
+## Checkout 
+https://www.waycode.in/projects/secretshield-local-first-secret-protection-for-developers-o0k9hl
