@@ -285,6 +285,28 @@ def test_an_explicit_error_handler_is_respected(frozen, project, tmp_path):
     assert b"\\u2717" in result.stdout and b"\\u043a" in result.stdout  # escaped, not "?"
 
 
+@pytest.mark.parametrize(
+    "handler, expected",
+    [("replace", b"? 2 files scanned"), ("ignore", b" 2 files scanned"),
+     ("backslashreplace", b"\\u2713 2 files scanned"), ("xmlcharrefreplace", b"&#10003; 2 files scanned")],
+)  # fmt: skip
+def test_each_explicit_error_handler_is_applied_by_the_built_executable(frozen, project, tmp_path, handler, expected):
+    env = clean_env(tmp_path, {"PYTHONIOENCODING": f"ascii:{handler}"})
+    result = run_bytes([frozen, "scan", "."], project, env)
+    assert result.returncode == 1 and b"Traceback" not in result.stderr
+    assert expected in result.stdout, result.stdout
+
+
+def test_a_requested_encoding_without_a_handler_never_crashes_on_any_unicode(frozen, project, tmp_path):
+    """The Windows CI failure: a requested legacy encoding must not raise on the marks or file names."""
+    for encoding in ("ascii", "cp1252", "cp437", "latin-1", "cp850"):
+        env = clean_env(tmp_path, {"PYTHONIOENCODING": encoding})
+        for args, code in ((["scan", "ok.py"], 0), (["scan", "."], 1), (["scan", ".", "--json"], 1)):
+            result = run_bytes([frozen, *args], project, env)
+            assert result.returncode == code, (encoding, args, result.stderr[-300:])
+            assert b"Traceback" not in result.stderr and b"UnicodeEncodeError" not in result.stderr
+
+
 def test_pythonutf8_zero_opts_out_without_crashing(frozen, project, tmp_path):
     env = clean_env(tmp_path, {"PYTHONIOENCODING": None, "PYTHONUTF8": "0"})
     result = run_bytes([frozen, "scan", "."], project, env)

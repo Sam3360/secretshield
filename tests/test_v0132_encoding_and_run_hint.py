@@ -111,6 +111,150 @@ def test_helper_respects_an_explicit_error_handler(monkeypatch):
     assert raw.getvalue() == b"\\u2713\n"
 
 
+def _patch_streams(monkeypatch, out, err=None):
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err or io.TextIOWrapper(io.BytesIO(), encoding="utf-8", errors="backslashreplace"))
+
+
+def _wrapper(encoding, errors):
+    raw = io.BytesIO()
+    return io.TextIOWrapper(raw, encoding=encoding, errors=errors, write_through=True), raw
+
+
+CRASHY_HANDLERS = ["strict", "surrogateescape", "surrogatepass"]
+TOLERANT_HANDLERS = ["replace", "ignore", "backslashreplace", "xmlcharrefreplace", "namereplace"]
+LEGACY = ["ascii", "cp1252", "cp437", "latin-1", "cp850"]
+
+
+@pytest.mark.parametrize("handler", CRASHY_HANDLERS)
+@pytest.mark.parametrize("encoding", LEGACY)
+def test_a_stream_that_would_crash_gets_the_replace_handler(monkeypatch, encoding, handler):
+    """surrogateescape is the default in many embedded/frozen interpreters and still raises."""
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    out, raw = _wrapper(encoding, handler)
+    with pytest.raises(UnicodeEncodeError):
+        out.write("\u2713")  # proves this really is a crashing stream before the fix
+    out, raw = _wrapper(encoding, handler)
+    _patch_streams(monkeypatch, out)
+    _tolerate_unencodable_output()
+    assert out.errors == "replace"
+    out.write("\u2713 ok")
+    assert raw.getvalue() == b"? ok"
+
+
+@pytest.mark.parametrize("handler", TOLERANT_HANDLERS)
+@pytest.mark.parametrize("encoding", LEGACY)
+def test_a_stream_that_cannot_crash_is_left_alone(monkeypatch, encoding, handler):
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    out, _ = _wrapper(encoding, handler)
+    _patch_streams(monkeypatch, out)
+    _tolerate_unencodable_output()
+    assert out.errors == handler
+
+
+@pytest.mark.parametrize("handler", CRASHY_HANDLERS[:2] + TOLERANT_HANDLERS)
+def test_an_already_utf8_stream_is_never_modified(monkeypatch, handler):
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    out, _ = _wrapper("utf-8", handler)
+    _patch_streams(monkeypatch, out)
+    _tolerate_unencodable_output()
+    assert out.errors == handler, "UTF-8 can encode everything: nothing to fix, so nothing is touched"
+
+
+@pytest.mark.parametrize("handler", ["strict", "surrogateescape", "replace", "ignore", "backslashreplace"])
+def test_an_explicit_handler_in_pythonioencoding_is_always_honored(monkeypatch, handler):
+    monkeypatch.setenv("PYTHONIOENCODING", f"ascii:{handler}")
+    out, _ = _wrapper("ascii", handler)
+    _patch_streams(monkeypatch, out)
+    _tolerate_unencodable_output()
+    assert out.errors == handler
+
+
+@pytest.mark.parametrize("value", ["ascii", "cp1252", "ascii:", "ascii: ", ":"])
+def test_pythonioencoding_without_a_handler_is_not_an_explicit_choice(monkeypatch, value):
+    monkeypatch.setenv("PYTHONIOENCODING", value)
+    out, _ = _wrapper("ascii", "strict")
+    _patch_streams(monkeypatch, out)
+    _tolerate_unencodable_output()
+    assert out.errors == "replace"
+
+
+def test_stderr_with_its_default_handler_is_not_touched(monkeypatch):
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    out, _ = _wrapper("cp1252", "strict")
+    err, _ = _wrapper("cp1252", "backslashreplace")
+    _patch_streams(monkeypatch, out, err)
+    _tolerate_unencodable_output()
+    assert out.errors == "replace" and err.errors == "backslashreplace"
+
+
+@pytest.mark.parametrize("handler", CRASHY_HANDLERS + TOLERANT_HANDLERS)
+@pytest.mark.parametrize("encoding", LEGACY + ["utf-8", "utf-16", "gb18030"])
+def test_the_crash_probe_agrees_with_what_a_real_write_does(encoding, handler):
+    """The decision is made by encoding a sample, so it must match reality exactly."""
+    from secretshield.cli import _OUTPUT_PROBE, _stream_would_crash_on_unicode
+
+    out, _ = _wrapper(encoding, handler)
+    try:
+        out.write(_OUTPUT_PROBE)
+        really_crashes = False
+    except UnicodeEncodeError:
+        really_crashes = True
+    out2, _ = _wrapper(encoding, handler)
+    assert _stream_would_crash_on_unicode(out2) is really_crashes
+
+
+def test_streams_without_an_encoding_are_treated_as_unsafe(monkeypatch):
+    class Odd:
+        encoding = None
+        errors = None
+        calls = []
+
+        def reconfigure(self, **kwargs):
+            self.calls.append(kwargs)
+
+    odd = Odd()
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    _patch_streams(monkeypatch, odd)
+    _tolerate_unencodable_output()
+    assert Odd.calls == [{"errors": "replace"}]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs a POSIX locale to get a non-UTF-8 stdout")
+def test_pip_package_survives_an_ascii_stdout_with_the_default_surrogateescape_handler(tmp_path):
+    """The case my first 'respect explicit handlers' change broke: ASCII + surrogateescape."""
+    (tmp_path / "ok.py").write_text("print(1)\n", encoding="utf-8")
+    (tmp_path / "\u043a\u043b\u044e\u0447.py").write_text(f'k = "{AWS}"\n', encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("PYTHONIO", "PYTHONUTF8", "LC_", "LANG"))}
+    env.update(PYTHONPATH=str(REPO_ROOT), LC_ALL="C", PYTHONCOERCECLOCALE="0", PYTHONUTF8="0", NO_COLOR="1")
+    probe = subprocess.run([sys.executable, "-c", "import sys; print(sys.stdout.encoding, sys.stdout.errors)"],
+                           cwd=tmp_path, env=env, capture_output=True, text=True)  # fmt: skip
+    assert probe.stdout.split() == ["ascii", "surrogateescape"], f"test premise not met: {probe.stdout!r}"
+    clean = subprocess.run([sys.executable, "-c", _CODE, "scan", "ok.py"], cwd=tmp_path, env=env, capture_output=True)
+    assert clean.returncode == 0, clean.stderr.decode("utf-8", "replace")
+    assert b"Traceback" not in clean.stderr and b"No potential secrets found" in clean.stdout
+    found = subprocess.run([sys.executable, "-c", _CODE, "scan", "."], cwd=tmp_path, env=env, capture_output=True)
+    assert found.returncode == 1 and b"Traceback" not in found.stderr
+    assert b"1 potential secret(s) found" in found.stdout
+
+
+def test_pip_package_honors_an_explicit_strict_handler_like_python(tmp_path):
+    (tmp_path / "ok.py").write_text("print(1)\n", encoding="utf-8")
+    result = run_cli(["scan", "ok.py"], tmp_path, "ascii:strict")
+    assert result.returncode != 0 and b"UnicodeEncodeError" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "handler, expected",
+    [("replace", b"? 1 files scanned"), ("ignore", b" 1 files scanned"),
+     ("backslashreplace", b"\\u2713 1 files scanned"), ("xmlcharrefreplace", b"&#10003; 1 files scanned")],
+)  # fmt: skip
+def test_pip_package_applies_each_explicit_handler(tmp_path, handler, expected):
+    (tmp_path / "ok.py").write_text("print(1)\n", encoding="utf-8")
+    result = run_cli(["scan", "ok.py"], tmp_path, f"ascii:{handler}")
+    assert result.returncode == 0 and expected in result.stdout, result.stdout
+
+
 def test_helper_tolerates_streams_that_cannot_be_reconfigured(monkeypatch):
     class Plain:
         pass

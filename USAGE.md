@@ -231,9 +231,22 @@ then these warnings are expected and not a sign that anything is wrong.
   to confirm it's installed.
 - **A different version runs** — see `where ss` above; another install
   (often pip) is earlier on the PATH.
-- **Output shows `?` instead of ✓/✗** — your terminal or redirect uses an
-  old code page that can't draw those characters. Results and exit codes
-  are unaffected.
+- **Output shows `?` instead of ✓/✗ or non-ASCII file names** — the output
+  is going through an old Windows code page that can't represent those
+  characters (SecretShield prints `?` rather than crashing). Results and exit
+  codes are unaffected. The standalone build writes **UTF-8** to redirected or
+  piped output by default; it honors `PYTHONIOENCODING` (`encoding` or
+  `encoding:handler`, for example `cp437` or `utf-8:backslashreplace`) the way
+  Python does, and `PYTHONUTF8=0` keeps the platform's default encoding. A
+  handler you name yourself is always respected, even `strict`. With the pip
+  version, set `PYTHONUTF8=1` (or `PYTHONIOENCODING=utf-8`) to get UTF-8.
+- **Strange characters instead of ✓/✗ when you pipe in Windows PowerShell** —
+  older Windows PowerShell decodes a program's output with the console's
+  legacy code page, while the standalone build writes UTF-8. Showing output
+  directly in the terminal is unaffected. Either set
+  `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8` first, or ask for
+  the console's own encoding with `$env:PYTHONIOENCODING = "cp437"` (symbols
+  it can't draw become `?`).
 
 ### What the standalone build can't do
 

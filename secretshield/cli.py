@@ -20,8 +20,10 @@ the file happens to be ``.py``, ``.js``, or ``.env``.
 from __future__ import annotations
 
 import argparse
+import codecs
 import fnmatch
 import json
+import os
 import runpy
 import sys
 from pathlib import Path
@@ -1686,20 +1688,63 @@ def _positive_int(value: str) -> int:
     return number
 
 
+# The marks this CLI prints plus a non-ASCII file-name sample. A stream whose
+# encoding and error handler can't encode all of them would crash on a clean
+# scan (U+2713/U+2717 exist in no legacy Windows code page).
+_OUTPUT_PROBE = "\u2713\u2717\u5bc6\u043a"
+
+
+def _explicit_io_error_handler() -> bool:
+    """True if PYTHONIOENCODING names a handler (``encoding:handler``).
+
+    That is the one case where the user asked for a specific handler, even a
+    strict one; anywhere else the handler is just whatever default the
+    interpreter picked.
+    """
+    return bool(os.environ.get("PYTHONIOENCODING", "").partition(":")[2].strip())
+
+
+def _stream_would_crash_on_unicode(stream) -> bool:
+    """Would printing this CLI's symbols raise UnicodeEncodeError on `stream`?
+
+    Decided by actually encoding a sample with the stream's own encoding and
+    error handler, not by the handler's name: ``strict`` raises, and so does
+    ``surrogateescape`` (a common default, including in embedded/frozen
+    interpreters) for any ordinary character the encoding lacks, while a UTF-8
+    stream of any handler is fine.
+    """
+    encoding = getattr(stream, "encoding", None)
+    if not encoding:
+        return True  # unknown: be safe
+    try:
+        codecs.lookup(encoding).incrementalencoder(getattr(stream, "errors", None) or "strict").encode(
+            _OUTPUT_PROBE
+        )
+    except UnicodeEncodeError:
+        return True
+    except (LookupError, TypeError, ValueError):
+        return True
+    return False
+
+
 def _tolerate_unencodable_output() -> None:
     """Never crash just because the output encoding can't represent a symbol.
 
     Redirected or piped output on Windows uses a legacy code page (cp1252,
     cp437, ...) that can't encode the check/cross marks this CLI prints, and
     a plain `print()` then raises UnicodeEncodeError, even for a clean scan.
-    Switching only the *error handler* to "replace" prints `?` for such a
-    character and changes nothing when the text is encodable.
+    For a stream that would crash, switch only the *error handler* to
+    "replace" (Python's documented behavior: the character becomes `?`).
+
+    Left alone: a stream that can already encode the output (UTF-8, whatever
+    its handler), and any stream when the user named a handler themselves with
+    ``PYTHONIOENCODING=encoding:handler``.
     """
+    if _explicit_io_error_handler():
+        return
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
-        # Only a strict stream can crash; an explicit handler (for example
-        # PYTHONIOENCODING=utf-8:backslashreplace) is the user's choice.
-        if callable(reconfigure) and getattr(stream, "errors", "strict") == "strict":
+        if callable(reconfigure) and _stream_would_crash_on_unicode(stream):
             try:
                 reconfigure(errors="replace")
             except (ValueError, OSError):

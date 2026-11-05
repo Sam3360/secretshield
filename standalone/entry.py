@@ -32,7 +32,9 @@ def _apply(stream, encoding, errors):
     if _same_encoding(getattr(stream, "encoding", None), encoding) and not errors:
         return  # e.g. an interactive Windows console, which is left exactly as it is
     try:
-        reconfigure(encoding=encoding, errors=errors or None)
+        # Changing the encoding alone would reset the handler to "strict", so pass the
+        # current one along unless PYTHONIOENCODING named a handler of its own.
+        reconfigure(encoding=encoding, errors=errors or getattr(stream, "errors", None))
     except (LookupError, ValueError, OSError):
         pass  # an unknown encoding name or an unusable stream keeps its current setup
 

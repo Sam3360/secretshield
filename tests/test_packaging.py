@@ -813,6 +813,12 @@ def test_install_guide_makes_no_unsupported_claims():
     assert "not code-signed or notarized" in low and "not tested" in low
 
 
+def test_output_encoding_behavior_is_documented_accurately():
+    for needle in ("PYTHONIOENCODING", "PYTHONUTF8=0", "UTF-8", "encoding:handler", "even `strict`",
+                   "[Console]::OutputEncoding", "rather than crashing"):  # fmt: skip
+        assert needle in USAGE_TEXT, needle
+
+
 def test_documented_urls_are_the_real_repository_urls():
     for url in re.findall(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", USAGE_TEXT + README_TEXT):
         assert url.startswith(("https://github.com/Sam3360/secretshield", "https://github.com/sponsors/Sam3360")) or "actions/" in url, url

@@ -217,3 +217,95 @@ def test_importing_the_entry_module_has_no_side_effects():
 def test_prepare_streams_runs_before_secretshield_is_imported():
     source = ENTRY.read_text(encoding="utf-8")
     assert source.index("prepare_streams()\n    from secretshield.cli import main") > 0
+
+
+# --- The exact sequence a frozen executable runs: prepare_streams(), then main()'s tolerance --------------------
+
+
+def run_sequence(monkeypatch, env, encoding, errors, text=TEXT):
+    """What the standalone build does at startup, on simulated streams.
+
+    entry.prepare_streams() runs first (it reads the real environment through `env`),
+    then secretshield.cli.main() calls _tolerate_unencodable_output() (which reads
+    os.environ). Returns (stream, bytes written, exception raised by the write or None).
+    """
+    from secretshield.cli import _tolerate_unencodable_output
+
+    for key in ("PYTHONIOENCODING", "PYTHONUTF8"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    out, raw = stream(encoding, errors)
+    err, _ = stream(encoding, "backslashreplace")
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    entry.prepare_streams(environ=dict(env))
+    _tolerate_unencodable_output()
+    try:
+        out.write(text)
+        error = None
+    except UnicodeEncodeError as exc:
+        error = exc
+    return out, raw.getvalue(), error
+
+
+@pytest.mark.parametrize("errors", ["surrogateescape", "strict"])
+def test_windows_failure_1_requested_cp1252_on_a_cp1252_pipe_does_not_crash(frozen, monkeypatch, errors):
+    """CI: PYTHONIOENCODING=cp1252 with `scan ok.py` died with 'character maps to <undefined>'.
+
+    The pipe already IS cp1252, so prepare_streams has nothing to change, and the
+    interpreter's default handler (surrogateescape here) still cannot encode the marks."""
+    out, data, error = run_sequence(monkeypatch, {"PYTHONIOENCODING": "cp1252"}, "cp1252", errors, "\u2713 caf\u00e9")
+    assert error is None
+    assert data == b"? caf\xe9" and out.encoding == "cp1252"
+
+
+@pytest.mark.parametrize("errors", ["surrogateescape", "strict"])
+def test_windows_failure_2_pythonutf8_zero_keeps_the_default_and_does_not_crash(frozen, monkeypatch, errors):
+    out, data, error = run_sequence(monkeypatch, {"PYTHONUTF8": "0"}, "cp1252", errors, "\u2713 \u043a\u043b\u044e\u0447.py")
+    assert error is None
+    assert out.encoding == "cp1252", "PYTHONUTF8=0 must not force UTF-8"
+    assert data == b"? ????.py"
+
+
+@pytest.mark.parametrize("errors", ["surrogateescape", "strict"])
+def test_no_variables_means_utf8_and_the_handler_is_preserved(frozen, monkeypatch, errors):
+    out, data, error = run_sequence(monkeypatch, {}, "cp1252", errors)
+    assert error is None and data == TEXT.encode("utf-8")
+    assert out.encoding == "utf-8"
+    assert out.errors == errors, "changing the encoding must not silently reset the handler to strict"
+
+
+def test_a_lone_surrogate_in_a_file_name_still_round_trips_under_utf8(frozen, monkeypatch):
+    out, data, error = run_sequence(monkeypatch, {}, "cp1252", "surrogateescape", "bad\udcffname")
+    assert error is None and data == b"bad\xffname", "same as a normal Python's surrogateescape stdout"
+
+
+@pytest.mark.parametrize("handler", ["backslashreplace", "replace", "ignore", "xmlcharrefreplace"])
+def test_an_explicit_handler_is_applied_after_the_whole_sequence(frozen, monkeypatch, handler):
+    out, data, error = run_sequence(monkeypatch, {"PYTHONIOENCODING": f"cp1252:{handler}"}, "cp1252", "surrogateescape", "a\u2713")
+    assert error is None and out.errors == handler
+    assert data == {"backslashreplace": b"a\\u2713", "replace": b"a?", "ignore": b"a", "xmlcharrefreplace": b"a&#10003;"}[handler]
+
+
+def test_an_explicit_strict_handler_is_honored_and_therefore_raises(frozen, monkeypatch):
+    out, data, error = run_sequence(monkeypatch, {"PYTHONIOENCODING": "cp1252:strict"}, "cp1252", "surrogateescape", "\u2713")
+    assert out.errors == "strict" and isinstance(error, UnicodeEncodeError)
+
+
+def test_an_interactive_console_style_stream_is_not_touched(frozen, monkeypatch):
+    rec = Recorder("utf-8")
+    rec.errors = "strict"
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    monkeypatch.setattr(sys, "stdout", rec)
+    monkeypatch.setattr(sys, "stderr", Recorder("utf-8"))
+    from secretshield.cli import _tolerate_unencodable_output
+
+    entry.prepare_streams(environ={})
+    _tolerate_unencodable_output()
+    assert rec.calls == []
+
+
+def test_requested_utf8_on_an_already_utf8_stream_changes_nothing(frozen, monkeypatch):
+    out, data, error = run_sequence(monkeypatch, {"PYTHONIOENCODING": "utf-8"}, "utf-8", "surrogateescape")
+    assert error is None and out.errors == "surrogateescape" and data == TEXT.encode("utf-8")
