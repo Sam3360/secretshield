@@ -32,7 +32,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.12"
   # Inno Setup is installed from the Chocolatey package that jrsoftware itself maintains.
-  INNO_SETUP_VERSION: "6.7.3"
+  INNO_SETUP_VERSION: "6.7.1"
   PYTHONUTF8: "1"
 
 jobs:
