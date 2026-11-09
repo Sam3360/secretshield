@@ -1218,8 +1218,10 @@ How it fits together:
   ones are kept) and a 10 MB gzip-compressed file. Use ignore rules or a
   [baseline](#secretshield-scan) for noisy repositories.
 
+>
+> For more details check [GITHUB-ACTIONS.md](https://github.com/Sam3360/secretshield/blob/main/GITHUB-ACTIONS.md)
+>
 
-### For more details check [GITHUB-ACTIONS.md](https://github.com/Sam3360/secretshield/blob/main/GITHUB-ACTIONS.md)
 
 
 ## Configuration
