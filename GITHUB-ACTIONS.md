@@ -6,7 +6,7 @@ Choose a workflow based on how often you want to scan:
 
 | Workflow | Trigger |
 |---|---|
-| [Default](https://github.com/Sam3360/secretshield-action/blob/main/templates/default.yml) | Every push and pull request |
+| [Default](https://github.com/Sam3360/secretshield-github-action-template/tree/main) | Every push and pull request |
 | [Daily](https://github.com/Sam3360/secretshield-action/blob/main/templates/daily.yml) | Every day |
 | [Weekly](https://github.com/Sam3360/secretshield-action/blob/main/templates/weekly.yml) | Every Monday |
 | [Monthly](https://github.com/Sam3360/secretshield-action/blob/main/templates/monthly.yml) | First day of every month |
