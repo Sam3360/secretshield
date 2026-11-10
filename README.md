@@ -147,3 +147,14 @@ MIT — see [LICENSE](LICENSE).
 Visit the official SecretShield homepage for an overview of the project, features, releases, and more:
 
 **🌐 [therealsecretshield.freebuff.app](https://therealsecretshield.freebuff.app/)**
+
+
+## 🏆 Recognition
+
+SecretShield was recognised as **Best Developer Tool** in [Waycode's Founding 100](https://www.waycode.in/articles/founding-100-eight-projects-different-ideas-one-community-of-builders).
+
+Waycode's Founding 100 brought together builders and their projects, recognising eight projects across different categories.
+
+This recognition highlights SecretShield's work in open-source security tooling and local-first secret detection.
+
+**[Read the announcement →](https://www.waycode.in/articles/founding-100-eight-projects-different-ideas-one-community-of-builders)**
