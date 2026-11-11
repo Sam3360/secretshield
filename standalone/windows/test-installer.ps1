@@ -26,6 +26,9 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Set-NewTerminalPath, Test-CommandResolvesTo and friends (unit tested separately).
+. (Join-Path $PSScriptRoot 'installer-test-helpers.ps1')
+
 $AppGuid = '59D4E691-DE3A-45F6-B026-DAF208839A37'
 $UninstallKeyUser = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{$AppGuid}_is1"
 $UninstallKeyMachine = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{$AppGuid}_is1"
@@ -55,13 +58,6 @@ function Same-Path([string]$A, [string]$B) {
     # Same real entries in the same order. (An empty trailing segment is not an
     # entry, and uninstalling may drop one that the original value had.)
     return (((Get-Entries $A) -join ';') -ceq ((Get-Entries $B) -join ';'))
-}
-
-function Set-NewTerminalPath {
-    # What a freshly opened terminal would see.
-    $m = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    $u = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $env:Path = "$m;$u"
 }
 
 function Invoke-Setup([string]$Exe, [string[]]$SetupArgs) {
@@ -162,9 +158,10 @@ try {
         $r = Invoke-Clean (Join-Path $installDir $name) @('--version') $project
         Assert ($r.ExitCode -eq 0 -and $r.Out.Trim() -eq "secretshield $ExpectedVersion") "$name --version -> secretshield $ExpectedVersion (clean environment)"
     }
-    Set-NewTerminalPath
+    $null = Set-NewTerminalPath -OwnDir $installDir
     foreach ($cmd in 'ss', 'secretshield') {
-        Assert (((Get-Command $cmd -CommandType Application | Select-Object -First 1).Source) -ieq (Join-Path $installDir "$cmd.exe")) "'$cmd' resolves to the installed copy"
+        $resolution = Test-CommandResolvesTo $cmd (Join-Path $installDir "$cmd.exe")
+        Assert $resolution.Ok "'$cmd' resolves to the installed copy$($resolution.Detail)"
     }
     foreach ($cmd in 'ss', 'secretshield') {
         $out = (& cmd.exe /c "$cmd --version" 2>&1 | Out-String).Trim()
