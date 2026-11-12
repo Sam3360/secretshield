@@ -146,7 +146,7 @@ MIT — see [LICENSE](LICENSE).
 
 Visit the official SecretShield homepage for an overview of the project, features, releases, and more:
 
-**🌐 [therealsecretshield.freebuff.app](https://therealsecretshield.freebuff.app/)**
+**🌐 [secretshield.freebuff.page](https://secretshield.freebuff.page/)**
 
 
 ## 🏆 Recognition
